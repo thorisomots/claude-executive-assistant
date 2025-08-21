@@ -42,20 +42,23 @@ app.post('/slack/webhook', async (req, res) => {
   try {
     console.log('Slack webhook received:', req.body);
     
-    // Parse Slack message
-    const { text, user_name, channel_name } = req.body;
+    // Parse Slack slash command
+    const { command, text, user_name, channel_name, user_id } = req.body;
     
     // Save conversation context
     const context = JSON.parse(fs.readFileSync(CONTEXT_FILE, 'utf8'));
+    const fullCommand = command + (text ? ' ' + text : '');
     context.conversations.push({
       timestamp: new Date().toISOString(),
       user: user_name,
       channel: channel_name,
-      message: text
+      command: command,
+      message: text,
+      fullCommand: fullCommand
     });
     
     // Process Claude Code commands
-    let response = await processClaudeCommand(text, context);
+    let response = await processClaudeCommand(command, text, context);
     
     // Update context
     context.last_analysis = new Date().toISOString();
@@ -74,20 +77,21 @@ app.post('/slack/webhook', async (req, res) => {
 });
 
 // Claude command processor
-async function processClaudeCommand(message, context) {
-  console.log('Processing command:', message);
+async function processClaudeCommand(command, text, context) {
+  console.log('Processing command:', command, 'with text:', text);
   
-  // Command routing
-  if (message.includes('/morning-focus')) {
-    return await handleMorningFocus(context);
-  } else if (message.includes('/evening-close')) {
-    return await handleEveningClose(message, context);
-  } else if (message.includes('/vision-alignment')) {
-    return await handleVisionAlignment(context);
-  } else if (message.includes('/weekly-review')) {
-    return await handleWeeklyReview(context);
-  } else {
-    return "Hello! I'm your executive assistant. Try commands like:\n• `/morning-focus` - Daily strategic guidance\n• `/evening-close` - Reflect on your day\n• `/vision-alignment` - Check goal alignment\n• `/weekly-review` - Weekly analysis";
+  // Command routing based on Slack slash command
+  switch(command) {
+    case '/morning-focus':
+      return await handleMorningFocus(context);
+    case '/evening-close':
+      return await handleEveningClose(text, context);
+    case '/vision-alignment':
+      return await handleVisionAlignment(context);
+    case '/weekly-review':
+      return await handleWeeklyReview(context);
+    default:
+      return "Hello! I'm your executive assistant. Try commands like:\n• `/morning-focus` - Daily strategic guidance\n• `/evening-close` - Reflect on your day\n• `/vision-alignment` - Check goal alignment\n• `/weekly-review` - Weekly analysis";
   }
 }
 
@@ -112,8 +116,8 @@ Good morning! Here's your strategic guidance for today:
 Ready to make today count! 🎯`;
 }
 
-async function handleEveningClose(message, context) {
-  const userInput = message.replace('/evening-close', '').trim();
+async function handleEveningClose(text, context) {
+  const userInput = text || "No reflection provided";
   
   return `🌙 **Evening Reflection**
 
