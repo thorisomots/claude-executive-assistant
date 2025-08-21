@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 require('dotenv').config();
 
 const app = express();
@@ -97,23 +98,48 @@ async function processClaudeCommand(command, text, context) {
 
 // Command handlers
 async function handleMorningFocus(context) {
-  // This would integrate with Claude Code and MCPs
-  return `🌅 **Morning Strategic Focus**
+  try {
+    // Get real data from your systems
+    const airtableData = await getAirtableData();
+    const githubKnowledge = await getGitHubKnowledgeBase();
+    const todayDate = new Date().toISOString().split('T')[0];
+    
+    // Analyze alignment between daily actions and long-term vision
+    const alignment = analyzeVisionAlignment(airtableData, githubKnowledge, todayDate);
+    
+    return `🌅 **Morning Strategic Focus - ${todayDate}**
 
-Good morning! Here's your strategic guidance for today:
+${alignment.greeting}
 
-**Vision Alignment Check:**
-✅ Learning goals are progressing well
-⚠️ Need to focus on budget optimization this week
+**📊 Your Data Analysis:**
+${alignment.dataAnalysis}
 
-**Today's Strategic Priorities:**
-1. Complete 2 learning modules (aligns with Q4 goals)
-2. Review and categorize expenses in Airtable
-3. Update GitHub documentation with recent insights
+**🎯 Vision Alignment Status:**
+${alignment.alignmentStatus}
 
-**Context:** Based on your recent patterns, focusing on these areas will move you forward on your long-term vision.
+**📋 Today's Strategic Priorities:**
+${alignment.priorities}
 
-Ready to make today count! 🎯`;
+**💡 Insights from Your Systems:**
+${alignment.insights}
+
+**🚀 Action Items:**
+${alignment.actionItems}
+
+Ready to align your day with your vision! 🎯`;
+  } catch (error) {
+    console.error('MCP Integration Error:', error);
+    return `🌅 **Morning Strategic Focus**
+
+I'm working to connect to your Airtable and GitHub data. 
+
+**Meanwhile, here's your framework:**
+1. Check yesterday's wins in Airtable
+2. Review your KnowledgeBase goals for today's priority
+3. Align today's tasks with your career/wealth/growth vision
+
+**System Status:** Integrating with your live data... 🔄`;
+  }
 }
 
 async function handleEveningClose(text, context) {
@@ -193,3 +219,188 @@ process.on('SIGTERM', () => {
   console.log('Received SIGTERM, shutting down gracefully');
   process.exit(0);
 });
+
+// Simple HTTP helper
+function makeRequest(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const urlObj = new URL(url);
+    
+    const reqOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname + urlObj.search,
+      method: options.method || 'GET',
+      headers: options.headers || {}
+    };
+    
+    const req = https.request(reqOptions, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const jsonData = JSON.parse(data);
+          resolve({ ok: res.statusCode === 200, json: () => jsonData, text: () => data });
+        } catch {
+          resolve({ ok: res.statusCode === 200, text: () => data });
+        }
+      });
+    });
+    
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// MCP Integration Functions
+async function getAirtableData() {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  
+  try {
+    // First, get list of bases
+    const basesResponse = await makeRequest('https://api.airtable.com/v0/meta/bases', {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`
+      }
+    });
+    
+    if (basesResponse.ok) {
+      const basesData = await basesResponse.json();
+      console.log('Airtable bases found:', basesData.bases?.length || 0);
+      
+      // Try to get data from first base
+      if (basesData.bases && basesData.bases.length > 0) {
+        const baseId = basesData.bases[0].id;
+        return {
+          connected: true,
+          basesCount: basesData.bases.length,
+          baseNames: basesData.bases.map(b => b.name),
+          lastChecked: new Date().toISOString()
+        };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Airtable API Error:', error);
+    return null;
+  }
+}
+
+async function getGitHubKnowledgeBase() {
+  const token = process.env.GITHUB_TOKEN;
+  const owner = 'thorisomots';
+  const repo = 'KnowledgeBase';
+  
+  try {
+    // Get repository contents
+    const response = await makeRequest(`https://api.github.com/repos/${owner}/${repo}/contents`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (response.ok) {
+      const contents = await response.json();
+      const knowledge = {
+        connected: true,
+        filesFound: contents.length,
+        fileNames: contents.map(f => f.name),
+        lastChecked: new Date().toISOString()
+      };
+      
+      // Look for key files: career.md, wealth.md, core-values.md, personal-growth.md
+      const keyFiles = ['career', 'wealth', 'core-values', 'personal-growth', 'goals', 'vision'];
+      knowledge.relevantFiles = contents
+        .filter(file => keyFiles.some(key => file.name.toLowerCase().includes(key)) && file.name.endsWith('.md'))
+        .map(f => f.name);
+      
+      return knowledge;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('GitHub API Error:', error);
+    return null;
+  }
+}
+
+function analyzeVisionAlignment(airtableData, githubKnowledge, todayDate) {
+  const today = new Date();
+  const dayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' });
+  const monthName = today.toLocaleDateString('en-US', { month: 'long' });
+  
+  // Default analysis structure
+  let analysis = {
+    greeting: `Good morning! Today is ${dayOfWeek}, ${monthName} ${today.getDate()}`,
+    dataAnalysis: "🔄 Connecting to your data sources...",
+    alignmentStatus: "📊 Analyzing your progress patterns...",
+    priorities: "⏳ Generating personalized priorities...",
+    insights: "🧠 Processing your system intelligence...",
+    actionItems: "🎯 Calculating optimal actions..."
+  };
+  
+  // If we have Airtable data
+  if (airtableData && airtableData.connected) {
+    analysis.dataAnalysis = `✅ Connected to ${airtableData.basesCount} Airtable bases: ${airtableData.baseNames.join(', ')}`;
+    analysis.alignmentStatus = `📊 Your tracking system is active! Ready to analyze progress patterns.`;
+  } else {
+    analysis.dataAnalysis = `⚠️ Airtable connection in progress... Will analyze your daily wins and budget data.`;
+  }
+  
+  // If we have GitHub knowledge
+  if (githubKnowledge && githubKnowledge.connected) {
+    analysis.insights = `📚 Connected to KnowledgeBase with ${githubKnowledge.filesFound} files`;
+    
+    if (githubKnowledge.relevantFiles && githubKnowledge.relevantFiles.length > 0) {
+      analysis.insights += `\n🎯 Found vision files: ${githubKnowledge.relevantFiles.join(', ')}`;
+      analysis.priorities = generatePriorities(githubKnowledge, todayDate);
+    } else {
+      analysis.insights += `\n📝 Tip: Add career.md, wealth.md, goals.md to your KnowledgeBase for deeper analysis`;
+      analysis.priorities = "1. 📝 Create/update your vision documents in KnowledgeBase\n2. 📊 Log today's activities in Airtable\n3. 🎯 Define 3 key goals for this month";
+    }
+    
+    analysis.actionItems = generateActionItems(githubKnowledge, airtableData);
+  } else {
+    analysis.insights = `🔄 Connecting to your KnowledgeBase repository...`;
+  }
+  
+  return analysis;
+}
+
+function generatePriorities(githubKnowledge, todayDate) {
+  const priorities = [];
+  const knowledgeAreas = Object.keys(githubKnowledge);
+  
+  if (knowledgeAreas.length === 0) {
+    return "1. Review and update your KnowledgeBase with current goals\n2. Define your career and wealth priorities\n3. Set up daily tracking in Airtable";
+  }
+  
+  // Extract priorities based on knowledge content
+  priorities.push("1. 📊 Review yesterday's wins and log today's goals in Airtable");
+  
+  if (knowledgeAreas.some(area => area.includes('career'))) {
+    priorities.push("2. 💼 Focus on career development activities from your KnowledgeBase");
+  }
+  
+  if (knowledgeAreas.some(area => area.includes('wealth'))) {
+    priorities.push("3. 💰 Work on wealth-building actions aligned with your financial goals");
+  }
+  
+  return priorities.join('\n');
+}
+
+function generateActionItems(githubKnowledge, airtableData) {
+  const actions = [];
+  
+  actions.push("• Update your daily wins in Airtable");
+  actions.push("• Review your KnowledgeBase for today's focus areas");
+  actions.push("• Align 3 key tasks with your long-term vision");
+  
+  if (githubKnowledge && Object.keys(githubKnowledge).length > 0) {
+    actions.push("• Document progress in your KnowledgeBase repository");
+  }
+  
+  return actions.join('\n');
+}
